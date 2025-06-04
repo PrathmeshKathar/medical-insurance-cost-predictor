@@ -1,583 +1,408 @@
 import streamlit as st
 import joblib
 import numpy as np
+import pandas as pd
+from typing import Dict, Tuple, List, Optional
+from dataclasses import dataclass
 
-# Configure page settings
-st.set_page_config(
-    page_title="Medical Insurance Cost Predictor",
-    page_icon="🏥",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+# ============================================================================
+# CONFIGURATION & CONSTANTS
+# ============================================================================
 
-# Initialize session state for theme
-if 'theme' not in st.session_state:
-    st.session_state.theme = 'Light'
+@dataclass
+class AppConfig:
+    """Application configuration constants"""
+    MODEL_PATH: str = "optimized_insurance_model.pkl"
+    PAGE_TITLE: str = "Medical Insurance Cost Predictor"
+    PAGE_ICON: str = "🏥"
+    MIN_AGE: int = 18
+    MAX_AGE: int = 100
+    MIN_BMI: float = 10.0
+    MAX_BMI: float = 50.0
+    MAX_CHILDREN: int = 5
 
-# Theme toggle in the top-right corner
-col_header1, col_header2, col_header3 = st.columns([6, 1, 1])
-with col_header3:
-    if st.button("🌓 Theme", key="theme_toggle"):
-        st.session_state.theme = 'Dark' if st.session_state.theme == 'Light' else 'Light'
-        st.rerun()
+@dataclass
+class UserInput:
+    """User input data structure"""
+    age: int
+    sex: str
+    bmi: float
+    children: int
+    smoker: str
+    region: str
 
-# Apply theme-specific CSS
-if st.session_state.theme == 'Dark':
+# ============================================================================
+# STYLING & UI COMPONENTS
+# ============================================================================
+
+def apply_custom_css():
+    """Apply custom CSS styling to the app"""
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    .stApp {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f172a 100%);
-        font-family: 'Inter', sans-serif;
-    }
-    
     .main-header {
         text-align: center;
-        padding: 2rem 0 3rem 0;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        font-size: 3rem;
-        font-weight: 700;
-        margin-bottom: 2rem;
-    }
-    
-    .card {
-        background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        padding: 2rem;
-        margin: 1rem 0;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    }
-    
-    .input-card {
-        background: rgba(255, 255, 255, 0.08);
-        backdrop-filter: blur(15px);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 20px;
-        padding: 2.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-    }
-    
-    .result-card {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-        backdrop-filter: blur(15px);
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        border-radius: 20px;
-        padding: 2.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 12px 40px rgba(102, 126, 234, 0.2);
-    }
-    
-    .section-header {
-        color: #ffffff;
-        font-size: 1.5rem;
-        font-weight: 600;
-        margin-bottom: 1.5rem;
-        text-align: center;
-    }
-    
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        padding: 0.8rem 2rem;
-        font-weight: 600;
-        font-size: 1.1rem;
-        transition: all 0.3s ease;
-        width: 100%;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
-    }
-    
-    .metric-container {
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin: 0.5rem 0;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    
-    .stSelectbox > div > div {
-        background-color: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 8px;
-        color: #ffffff;
-    }
-    
-    .stNumberInput > div > div {
-        background-color: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 8px;
-        color: #ffffff;
-    }
-    
-    .stSlider > div > div {
-        color: #ffffff;
-    }
-    
-    .prediction-amount {
         font-size: 2.5rem;
-        font-weight: 700;
-        text-align: center;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        margin: 1rem 0;
-    }
-    
-    .factor-item {
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        border-left: 4px solid #667eea;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-else:
-    st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    .stApp {
-        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-        font-family: 'Inter', sans-serif;
-        color: #1e293b;
-        min-height: 100vh;
-    }
-    
-    .stMarkdown, .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
-        color: #1e293b !important;
-    }
-    
-    .stText, div[data-testid="stText"] {
-        color: #1e293b !important;
-    }
-    
-    .main-header {
-        text-align: center;
-        padding: 2rem 0 3rem 0;
-        background: linear-gradient(135deg, #22543d 0%, #2d5a3d 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        font-size: 3rem;
-        font-weight: 700;
         margin-bottom: 2rem;
-        text-shadow: 0 2px 4px rgba(34, 84, 61, 0.1);
-    }
-    
-    .card {
-        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-        border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: 2rem;
-        margin: 1rem 0;
-        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
-        backdrop-filter: blur(20px);
-    }
-    
-    .input-card {
-        background: linear-gradient(145deg, #ffffff 0%, #f1f5f9 100%);
-        border: 1px solid #cbd5e1;
-        border-radius: 20px;
-        padding: 2.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.1);
-        position: relative;
-        overflow: hidden;
-    }
-    
-    .input-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(135deg, #22543d 0%, #2f855a 100%);
-    }
-    
-    .result-card {
-        background: linear-gradient(145deg, #f8fafc 0%, #e2e8f0 100%);
-        border: 1px solid #cbd5e1;
-        border-radius: 20px;
-        padding: 2.5rem;
-        margin: 1rem 0;
-        box-shadow: 0 20px 40px rgba(79, 70, 229, 0.1);
-        position: relative;
-        overflow: hidden;
-    }
-    
-    .result-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(135deg, #1a5838 0%, #22543d 100%);
+        font-weight: 600;
     }
     
     .section-header {
-        color: #1e293b;
         font-size: 1.5rem;
-        font-weight: 600;
-        margin-bottom: 1.5rem;
-        text-align: center;
-        position: relative;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid #e0e0e0;
+        padding-bottom: 0.5rem;
+        font-weight: 500;
     }
     
-    .section-header::after {
-        content: '';
-        position: absolute;
-        bottom: -8px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 60px;
-        height: 3px;
-        background: linear-gradient(135deg, #22543d 0%, #2f855a 100%);
-        border-radius: 2px;
+    .input-card {
+        background: #ffffff;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin: 1rem 0;
+        border: 1px solid #e0e0e0;
     }
     
-    .stButton > button {
-        background: linear-gradient(135deg, #22543d 0%, #2f855a 100%);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        padding: 0.9rem 2rem;
-        font-weight: 600;
-        font-size: 1.1rem;
-        transition: all 0.3s ease;
-        width: 100%;
-        box-shadow: 0 8px 20px rgba(34, 84, 61, 0.3);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    
-    .stButton > button:hover {
-        background: linear-gradient(135deg, #1a5838 0%, #276749 100%);
-        transform: translateY(-2px);
-        box-shadow: 0 12px 30px rgba(34, 84, 61, 0.4);
-    }
-    
-    .metric-container {
-        background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin: 0.5rem 0;
-        border: 1px solid #cbd5e1;
-        color: #1e293b;
-        box-shadow: 0 4px 6px rgba(15, 23, 42, 0.05);
-    }
-    
-    .metric-container p, .metric-container div {
-        color: #1e293b !important;
-    }
-    
-    .stSelectbox > div > div, .stSelectbox label {
-        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
-        color: #1e293b !important;
-        transition: all 0.3s ease;
-    }
-    
-    .stSelectbox > div > div:focus-within {
-        border-color: #22543d;
-        box-shadow: 0 0 0 3px rgba(34, 84, 61, 0.1);
-    }
-    
-    .stNumberInput > div > div, .stNumberInput label {
-        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
-        color: #1e293b !important;
-        transition: all 0.3s ease;
-    }
-    
-    .stNumberInput > div > div:focus-within {
-        border-color: #22543d;
-        box-shadow: 0 0 0 3px rgba(34, 84, 61, 0.1);
-    }
-    
-    .stSlider > div > div, .stSlider label {
-        color: #1e293b !important;
-    }
-    
-    .stSlider .stMarkdown {
-        color: #1e293b !important;
-    }
-    
-    label, .stMarkdown label {
-        color: #334155 !important;
-        font-weight: 500 !important;
+    .result-card {
+        background: #f8f9fa;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin: 1rem 0;
+        border: 1px solid #e0e0e0;
     }
     
     .prediction-amount {
-        font-size: 2.8rem;
-        font-weight: 700;
+        font-size: 3rem;
+        font-weight: bold;
         text-align: center;
-        background: linear-gradient(135deg, #1a5838 0%, #22543d 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
         margin: 1rem 0;
-        text-shadow: 0 2px 4px rgba(26, 88, 56, 0.1);
+    }
+    
+    .metric-container {
+        background: #ffffff;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        border: 1px solid #e0e0e0;
     }
     
     .factor-item {
-        background: linear-gradient(135deg, #f0fff4 0%, #dcfce7 100%);
-        border-radius: 12px;
-        padding: 1.2rem;
-        margin: 0.8rem 0;
-        border-left: 4px solid #22543d;
-        color: #1e293b;
-        box-shadow: 0 4px 6px rgba(34, 84, 61, 0.1);
-        transition: all 0.3s ease;
+        background: #ffffff;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 0.5rem 0;
+        border-left: 3px solid #007bff;
+        border: 1px solid #e0e0e0;
     }
     
-    .factor-item:hover {
-        transform: translateX(4px);
-        box-shadow: 0 6px 12px rgba(34, 84, 61, 0.15);
+    .stButton > button {
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        padding: 0.75rem 2rem;
+        font-size: 1.1rem;
+        font-weight: 500;
+        transition: background-color 0.3s ease;
     }
     
-    .factor-item p, .factor-item div, .factor-item strong, .factor-item small {
-        color: #1e293b !important;
-    }
-    
-    /* Enhanced text visibility */
-    * {
-        color: #1e293b !important;
-    }
-    
-    .stApp * {
-        color: #1e293b !important;
-    }
-    
-    /* Add subtle animations */
-    .input-card, .result-card, .card {
-        transition: all 0.3s ease;
-    }
-    
-    .input-card:hover, .result-card:hover, .card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 25px 50px rgba(15, 23, 42, 0.15);
-    }
-    
-    /* Custom scrollbar */
-    ::-webkit-scrollbar {
-        width: 8px;
-    }
-    
-    ::-webkit-scrollbar-track {
-        background: #f1f5f9;
-        border-radius: 4px;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-        background: linear-gradient(135deg, #22543d 0%, #2f855a 100%);
-        border-radius: 4px;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(135deg, #1a5838 0%, #276749 100%);
+    .stButton > button:hover {
+        background: #0056b3;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# Load the trained model
+def render_header():
+    """Render the main application header"""
+    st.markdown(
+        f'<h1 class="main-header">{AppConfig.PAGE_ICON} {AppConfig.PAGE_TITLE}</h1>', 
+        unsafe_allow_html=True
+    )
+
+# ============================================================================
+# DATA PROCESSING & BUSINESS LOGIC
+# ============================================================================
+
 @st.cache_resource
 def load_model():
+    """Load the trained machine learning model"""
     try:
-        return joblib.load("insurance_model.pkl")
+        return joblib.load(AppConfig.MODEL_PATH)
     except FileNotFoundError:
-        st.error("⚠️ Model file 'insurance_model.pkl' not found. Please ensure the model file is in the same directory.")
+        st.error(f"⚠️ Model file '{AppConfig.MODEL_PATH}' not found.")
+        return None
+    except Exception as e:
+        st.error(f"❌ Error loading model: {str(e)}")
         return None
 
-model = load_model()
+def get_bmi_category(bmi: float) -> Tuple[str, str]:
+    """Get BMI category and corresponding emoji"""
+    if bmi < 18.5:
+        return "Underweight", "🔵"
+    elif bmi < 25:
+        return "Normal", "🟢"
+    elif bmi < 30:
+        return "Overweight", "🟡"
+    else:
+        return "Obese", "🔴"
 
-# Main header
-st.markdown('<h1 class="main-header">🏥 Medical Insurance Cost Predictor</h1>', unsafe_allow_html=True)
+def get_cost_level(prediction: float) -> Tuple[str, str]:
+    """Determine cost level based on prediction"""
+    if prediction < 5000:
+        return "Low Cost", "💚"
+    elif prediction < 15000:
+        return "Moderate Cost", "💛"
+    else:
+        return "High Cost", "🔴"
 
-if model is not None:
-    # Create main layout
+def analyze_risk_factors(user_input: UserInput) -> List[Tuple[str, str]]:
+    """Analyze risk factors based on user input"""
+    factors = []
+    
+    if user_input.smoker == "yes":
+        factors.append((
+            "🚬 Smoking", 
+            "Major cost driver - significantly increases premiums"
+        ))
+    
+    if user_input.bmi > 30:
+        factors.append((
+            "⚖️ High BMI", 
+            "Obesity increases health risks and costs"
+        ))
+    
+    if user_input.age > 50:
+        factors.append((
+            "👤 Age Factor", 
+            "Higher age correlates with increased costs"
+        ))
+    
+    if user_input.children > 2:
+        factors.append((
+            "👶 Family Size", 
+            "Multiple dependents increase coverage costs"
+        ))
+    
+    return factors
+
+# ============================================================================
+# UI COMPONENTS
+# ============================================================================
+
+def render_input_form() -> UserInput:
+    """Render the input form and return user input"""
+    st.markdown('<div class="input-card">', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">📋 Personal Information</h2>', unsafe_allow_html=True)
+    
+    # Basic Details Section
+    st.markdown("#### 👤 Basic Details")
+    col_a, col_b = st.columns(2)
+    
+    with col_a:
+        age = st.slider("Age", AppConfig.MIN_AGE, AppConfig.MAX_AGE, 25)
+        sex = st.selectbox("Gender", ["male", "female"])
+    
+    with col_b:
+        bmi = st.number_input(
+            "BMI", 
+            min_value=AppConfig.MIN_BMI, 
+            max_value=AppConfig.MAX_BMI, 
+            value=20.0, 
+            step=0.1
+        )
+        children = st.slider("Children", 0, AppConfig.MAX_CHILDREN, 0)
+    
+    # Lifestyle & Location Section
+    st.markdown("---")
+    st.markdown("#### 🏠 Lifestyle & Location")
+    col_c, col_d = st.columns(2)
+    
+    with col_c:
+        smoker = st.selectbox("Smoking Status", ["no", "yes"])
+    
+    with col_d:
+        region = st.selectbox(
+            "Region", 
+            ["northeast", "northwest", "southeast", "southwest"]
+        )
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    return UserInput(age, sex, bmi, children, smoker, region)
+
+def render_user_profile(user_input: UserInput):
+    """Render user profile summary"""
+    st.markdown('<div class="result-card">', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">📊 Your Profile</h2>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="metric-container">', unsafe_allow_html=True)
+    col_info1, col_info2 = st.columns(2)
+    
+    with col_info1:
+        st.markdown(f"**👤 Age:** {user_input.age} years")
+        st.markdown(f"**⚧ Gender:** {user_input.sex.title()}")
+        st.markdown(f"**⚖️ BMI:** {user_input.bmi}")
+    
+    with col_info2:
+        st.markdown(f"**👶 Children:** {user_input.children}")
+        st.markdown(f"**🚬 Smoker:** {user_input.smoker.title()}")
+        st.markdown(f"**🗺️ Region:** {user_input.region.title()}")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # BMI Category
+    bmi_category, bmi_color = get_bmi_category(user_input.bmi)
+    st.markdown(f"**BMI Category:** {bmi_color} {bmi_category}")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def render_prediction_results(prediction: float, user_input: UserInput):
+    """Render prediction results and analysis"""
+    st.markdown('<div class="result-card">', unsafe_allow_html=True)
+    
+    # Main prediction display
+    st.markdown(
+        f'<div class="prediction-amount">${prediction:,.2f}</div>', 
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<p style="text-align: center; font-size: 1.2rem;">Estimated Annual Premium</p>', 
+        unsafe_allow_html=True
+    )
+    
+    # Cost level indicator
+    cost_level, cost_emoji = get_cost_level(prediction)
+    st.markdown(
+        f'<div style="text-align: center; font-size: 1.3rem; font-weight: 500;">'
+        f'{cost_emoji} {cost_level}</div>', 
+        unsafe_allow_html=True
+    )
+    
+    # Risk factors analysis
+    st.markdown("#### 📈 Cost Factors Analysis")
+    factors = analyze_risk_factors(user_input)
+    
+    if factors:
+        for factor, description in factors:
+            st.markdown(
+                f'<div class="factor-item">'
+                f'<strong>{factor}</strong><br>'
+                f'<small>{description}</small>'
+                f'</div>', 
+                unsafe_allow_html=True
+            )
+    else:
+        st.markdown(
+            '<div class="factor-item">'
+            '<strong>💚 Low Risk Profile</strong><br>'
+            '<small>You have relatively few high-risk factors</small>'
+            '</div>', 
+            unsafe_allow_html=True
+        )
+    
+    # Payment breakdown
+    st.markdown("---")
+    st.markdown("#### 💰 Payment Breakdown")
+    col1, col2, col3 = st.columns(3)
+    
+    monthly = prediction / 12
+    quarterly = prediction / 4
+    
+    col1.markdown(f"**Monthly:** ${monthly:.2f}")
+    col2.markdown(f"**Quarterly:** ${quarterly:.2f}")
+    col3.markdown(f"**Annual:** ${prediction:,.2f}")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def make_prediction(model, user_input: UserInput) -> Optional[float]:
+    """Make prediction using the loaded model"""
+    try:
+        # Convert user input to DataFrame
+        input_data = pd.DataFrame([{
+            'age': user_input.age,
+            'sex': user_input.sex,
+            'bmi': user_input.bmi,
+            'children': user_input.children,
+            'smoker': user_input.smoker,
+            'region': user_input.region
+        }])
+        
+        # Make prediction
+        prediction = model.predict(input_data)
+        return prediction[0]
+        
+    except Exception as e:
+        st.error(f"❌ Error making prediction: {str(e)}")
+        return None
+
+def render_footer():
+    """Render application footer"""
+    st.markdown("---")
+    st.markdown(
+        '<div style="text-align: center; opacity: 0.7; padding: 2rem 0;">'
+        f'<small>{AppConfig.PAGE_ICON} {AppConfig.PAGE_TITLE}</small>'
+        '</div>', 
+        unsafe_allow_html=True
+    )
+
+# ============================================================================
+# MAIN APPLICATION
+# ============================================================================
+
+def main():
+    """Main application function"""
+    # Configure page
+    st.set_page_config(
+        page_title=AppConfig.PAGE_TITLE,
+        page_icon=AppConfig.PAGE_ICON,
+        layout="wide",
+        initial_sidebar_state="collapsed"
+    )
+    
+    # Apply styling
+    apply_custom_css()
+    
+    # Render header
+    render_header()
+    
+    # Load model
+    model = load_model()
+    
+    if model is None:
+        st.error(f"❌ Cannot load model. Please check if '{AppConfig.MODEL_PATH}' exists.")
+        return
+    
+    # Main layout
     col1, col2 = st.columns([3, 2], gap="large")
     
+    # Input form
     with col1:
-        st.markdown('<div class="input-card">', unsafe_allow_html=True)
-        st.markdown('<h2 class="section-header">📋 Personal Information</h2>', unsafe_allow_html=True)
-        
-        # Personal details section
-        st.markdown("#### 👤 Basic Details")
-        col_a, col_b = st.columns(2)
-        
-        with col_a:
-            age = st.slider("Age", 18, 100, 25, help="Your current age in years")
-            sex = st.selectbox("Gender", ["male", "female"])
-        
-        with col_b:
-            bmi = st.number_input("BMI", min_value=10.0, max_value=50.0, value=20.0, step=0.1,
-                                 help="Body Mass Index (weight in kg / height in m²)")
-            children = st.slider("Children", 0, 5, 0, help="Number of dependents covered")
-        
-        st.markdown("---")
-        
-        # Lifestyle and location section
-        st.markdown("#### 🏠 Lifestyle & Location")
-        col_c, col_d = st.columns(2)
-        
-        with col_c:
-            smoker = st.selectbox("Smoking Status", ["no", "yes"], 
-                                help="Are you a smoker?")
-        
-        with col_d:
-            region = st.selectbox("Region", ["northeast", "northwest", "southeast", "southwest"],
-                                help="Your geographical region")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        user_input = render_input_form()
     
+    # User profile
     with col2:
-        st.markdown('<div class="result-card">', unsafe_allow_html=True)
-        st.markdown('<h2 class="section-header">📊 Your Profile</h2>', unsafe_allow_html=True)
-        
-        # Display current selection in a nice format
-        st.markdown('<div class="metric-container">', unsafe_allow_html=True)
-        col_info1, col_info2 = st.columns(2)
-        
-        with col_info1:
-            st.markdown(f"**👤 Age:** {age} years")
-            st.markdown(f"**⚧ Gender:** {sex.title()}")
-            st.markdown(f"**⚖️ BMI:** {bmi}")
-        
-        with col_info2:
-            st.markdown(f"**👶 Children:** {children}")
-            st.markdown(f"**🚬 Smoker:** {smoker.title()}")
-            st.markdown(f"**🗺️ Region:** {region.title()}")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # BMI Category
-        if bmi < 18.5:
-            bmi_category = "Underweight"
-            bmi_color = "🔵"
-        elif bmi < 25:
-            bmi_category = "Normal"
-            bmi_color = "🟢"
-        elif bmi < 30:
-            bmi_category = "Overweight"
-            bmi_color = "🟡"
-        else:
-            bmi_category = "Obese"
-            bmi_color = "🔴"
-        
-        st.markdown(f"**BMI Category:** {bmi_color} {bmi_category}")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        render_user_profile(user_input)
     
     # Prediction section
     st.markdown('<div class="input-card">', unsafe_allow_html=True)
     
-    # Convert inputs to model format
-    input_data = np.array([
-        age,
-        1 if sex == "male" else 0,
-        bmi,
-        children,
-        1 if smoker == "yes" else 0,
-        1 if region == "northeast" else
-        2 if region == "northwest" else
-        3 if region == "southeast" else
-        4
-    ]).reshape(1, -1)
-    
-    # Centered predict button
+    # Prediction button
     col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
     with col_btn2:
         if st.button("🔮 Calculate Insurance Cost"):
-            try:
-                prediction = model.predict(input_data)
-                
-                # Display result
-                st.markdown('<div class="result-card">', unsafe_allow_html=True)
-                st.markdown(f'<div class="prediction-amount">${prediction[0]:,.2f}</div>', unsafe_allow_html=True)
-                st.markdown('<p style="text-align: center; font-size: 1.2rem; margin-bottom: 2rem;">Estimated Annual Premium</p>', unsafe_allow_html=True)
-                
-                # Cost analysis
-                if prediction[0] < 5000:
-                    cost_level = "Low Cost"
-                    cost_emoji = "💚"
-                    cost_color = "#10b981"
-                elif prediction[0] < 15000:
-                    cost_level = "Moderate Cost" 
-                    cost_emoji = "💛"
-                    cost_color = "#f59e0b"
-                else:
-                    cost_level = "High Cost"
-                    cost_emoji = "🔴"
-                    cost_color = "#ef4444"
-                
-                st.markdown(f'<div style="text-align: center; font-size: 1.3rem; color: {cost_color}; font-weight: 600; margin-bottom: 2rem;">{cost_emoji} {cost_level}</div>', unsafe_allow_html=True)
-                
-                # Risk factors analysis
-                st.markdown("#### 📈 Cost Factors Analysis")
-                
-                factors = []
-                if smoker == "yes":
-                    factors.append(("🚬 Smoking", "Major cost driver - significantly increases premiums"))
-                if bmi > 30:
-                    factors.append(("⚖️ High BMI", "Obesity increases health risks and costs"))
-                if age > 50:
-                    factors.append(("👤 Age Factor", "Higher age correlates with increased costs"))
-                if children > 2:
-                    factors.append(("👶 Family Size", "Multiple dependents increase coverage costs"))
-                
-                if factors:
-                    for factor, description in factors:
-                        st.markdown(f'<div class="factor-item"><strong>{factor}</strong><br><small>{description}</small></div>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<div class="factor-item"><strong>💚 Low Risk Profile</strong><br><small>You have relatively few high-risk factors</small></div>', unsafe_allow_html=True)
-                
-                # Monthly breakdown
-                monthly_cost = prediction[0] / 12
-                st.markdown("---")
-                st.markdown("#### 💰 Payment Breakdown")
-                
-                col_pay1, col_pay2, col_pay3 = st.columns(3)
-                with col_pay1:
-                    st.markdown(f"**Monthly:** ${monthly_cost:.2f}")
-                with col_pay2:
-                    st.markdown(f"**Quarterly:** ${prediction[0]/4:.2f}")
-                with col_pay3:
-                    st.markdown(f"**Annual:** ${prediction[0]:,.2f}")
-                
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-            except Exception as e:
-                st.error(f"❌ Error making prediction: {str(e)}")
+            prediction = make_prediction(model, user_input)
+            
+            if prediction is not None:
+                render_prediction_results(prediction, user_input)
     
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Footer
+    render_footer()
 
-else:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.error("❌ Cannot load the machine learning model. Please check if 'insurance_model.pkl' exists in the current directory.")
-    st.markdown('</div>', unsafe_allow_html=True)
+# ============================================================================
+# APPLICATION ENTRY POINT
+# ============================================================================
 
-# Footer
-st.markdown("---")
-st.markdown(
-    f'<div style="text-align: center; opacity: 0.7; padding: 2rem 0;"><small>🏥 Medical Insurance Cost Predictor | Current Theme: {st.session_state.theme}</small></div>', 
-    unsafe_allow_html=True
-)
+if __name__ == "__main__":
+    main()
