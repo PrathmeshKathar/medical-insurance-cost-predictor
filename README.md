@@ -11,7 +11,7 @@ An interactive web app built with **Streamlit** that predicts medical insurance 
 
 ## 📸 Screenshot
 
-<img src="assets/screenshot.png" alt="App Screenshot" width="700"/>
+<img src="/assets/Screenshot (908).png" alt="App Screenshot" width="700"/>
 
 
 ## 📊 Prediction Model
