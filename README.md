@@ -9,6 +9,11 @@ An interactive web app built with **Streamlit** that predicts medical insurance 
 - Real-time results based on user input
 - Trained on real-world healthcare cost data
 
+## 📸 Screenshot
+
+<img src="assets/screenshot.png" alt="App Screenshot" width="700"/>
+
+
 ## 📊 Prediction Model
 
 - **Algorithm**: Random Forest Regressor  
